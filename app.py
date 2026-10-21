@@ -1,14 +1,6 @@
 import base64
 import io
-from azure.ai.inference import ChatCompletionsClient
-from azure.ai.inference.models import (
-    ImageContentItem,
-    ImageUrl,
-    SystemMessage,
-    TextContentItem,
-    UserMessage,
-)
-from azure.core.credentials import AzureKeyCredential
+from openai import OpenAI
 from PIL import Image
 import streamlit as st
 
@@ -45,10 +37,10 @@ if not api_key:
   )
 
 if api_key:
-  # 使用微軟官方專為 GitHub Models 設計的 ChatCompletionsClient
-  client = ChatCompletionsClient(
-      endpoint="https://models.inference.ai.azure.com",
-      credential=AzureKeyCredential(api_key.strip()),
+  # 使用 GitHub Models 最新官方正式 Endpoint
+  client = OpenAI(
+      base_url="https://models.github.ai/inference",
+      api_key=api_key.strip(),
   )
 
   img_file = st.camera_input("📷 拍照辨識") or st.file_uploader(
@@ -68,6 +60,7 @@ if api_key:
         若有多個字，請逐行輸出部首。
         """
 
+    # 備援模型清單
     candidate_models = [
         "gpt-4o-mini",
         "gpt-4o",
@@ -80,19 +73,20 @@ if api_key:
 
       for model_name in candidate_models:
         try:
-          response = client.complete(
-              messages=[
-                  SystemMessage(content=prompt),
-                  UserMessage(content=[
-                      TextContentItem(text="請辨識這張圖片中的字與部首："),
-                      ImageContentItem(
-                          image_url=ImageUrl(
-                              url=f"data:image/jpeg;base64,{base64_image}"
-                          )
-                      ),
-                  ]),
-              ],
+          response = client.chat.completions.create(
               model=model_name,
+              messages=[{
+                  "role": "user",
+                  "content": [
+                      {"type": "text", "text": prompt},
+                      {
+                          "type": "image_url",
+                          "image_url": {
+                              "url": f"data:image/jpeg;base64,{base64_image}"
+                          },
+                      },
+                  ],
+              }],
           )
 
           response_text = response.choices[0].message.content.strip()
