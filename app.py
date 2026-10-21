@@ -69,23 +69,25 @@ if api_key:
   )
 
   if img_file:
+    # 讀取圖片並進行自動縮放壓縮 (解決 Base64 過大被 API 截斷問題)
     image = Image.open(img_file).convert("RGB")
+    image.thumbnail((800, 800))  # 將圖片等比例縮放至 800px 以內
+
     buffered = io.BytesIO()
-    image.save(buffered, format="JPEG", quality=95)
+    image.save(
+        buffered, format="JPEG", quality=85
+    )  # 壓縮 JPEG 品質至 85%，降至約 50KB
     base64_image = base64.b64encode(buffered.getvalue()).decode("utf-8")
 
-    # 統一提示詞：整合至 User 訊息，明確引導分析圖片
-    prompt_text = """請仔細分析這張圖片中的中文漢字，並找出該字的「部首」（繁體字）。
-
-【嚴格規則】
-1. 只需要輸出該漢字的部首（例如：艹、女、木、水）。
-2. 絕對禁止輸出 "OK"、"Received" 或任何英文與說明文字！
-3. 若有多個字，請逐行輸出各字的部首。
-"""
+    prompt_text = (
+        "圖片裡有一個繁體中文漢字，請找出該字的「部首」。"
+        "【規則】請只輸出一個繁體字部首（如：艹、女、木、水），絕對不要輸出"
+        ' "OK"、標點符號或任何說明文字。'
+    )
 
     candidate_models = ["gpt-4o-mini", "gpt-4o"]
 
-    with st.spinner("正在辨識部首中..."):
+    with st.spinner("正在高速辨識部首中..."):
       success = False
       last_error = None
 
@@ -100,18 +102,18 @@ if api_key:
                       {
                           "type": "image_url",
                           "image_url": {
-                              "url": f"data:image/jpeg;base64,{base64_image}",
-                              "detail": "high",  # 開啟高解析度圖片 OCR 辨識
+                              "url": f"data:image/jpeg;base64,{base64_image}"
                           },
                       },
                   ],
               }],
               temperature=0.1,
+              max_tokens=20,  # 強制限制輸出長度，防止多餘廢話
           )
 
           response_text = parse_response_text(response).strip()
 
-          # 過濾非部首的無效回應
+          # 若模型依然回傳無效文字，觸發切換
           if response_text.upper() in [
               "OK",
               "OK.",
