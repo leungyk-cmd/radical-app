@@ -70,7 +70,7 @@ if api_key:
                             ],
                         }
                     ],
-                    model="llama-3.2-11b-vision-instruct",
+                    model="llama-3.2-11b-vision-preview",
                     temperature=0.1,
                 )
                 
