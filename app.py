@@ -1,82 +1,17 @@
 import base64
 import io
-import requests
+from openai import OpenAI
 from PIL import Image
 import streamlit as st
 
+# 頁面標題與佈局設定
 st.set_page_config(page_title="部首識別助手", page_icon="🈛", layout="centered")
 
+# 自訂 CSS 巨型字體
 st.markdown(
     """
     <style>
-    .huge-font import base64
-import io
-import requests
-from PIL import Image
-import streamlit as st
-
-st.set_page_config(page_title="部首識別助手", page_icon="🈛", layout="centered")
-
-st.title("🈛 部首識別助手 (終極除錯模式)")
-st.write("請拍照或上傳包含漢字的圖片：")
-
-api_key = st.secrets.get("GITHUB_TOKEN", "")
-if not api_key:
-    api_key = st.text_input("請輸入 GitHub Token：", type="password")
-
-if api_key:
-    img_file = st.camera_input("📷 拍照辨識") or st.file_uploader("📁 上傳圖片", type=["jpg", "jpeg", "png"])
-
-    if img_file:
-        image = Image.open(img_file).convert("RGB")
-        image.thumbnail((800, 800))
-        buffered = io.BytesIO()
-        image.save(buffered, format="JPEG")
-        base64_image = base64.b64encode(buffered.getvalue()).decode("utf-8")
-
-        prompt = "你是一個部首辨識小助手。請辨識圖片中的漢字，並只輸出該字的「部首」（例如：艹、水、木）。絕對不要輸出其他字。"
-
-        with st.spinner("正在探測伺服器底層回應..."):
-            headers = {
-                "Authorization": f"Bearer {api_key.strip()}",
-                "Content-Type": "application/json",
-                "Accept": "application/json"
-            }
-            
-            payload = {
-                "model": "gpt-4o",
-                "messages": [
-                    {
-                        "role": "user",
-                        "content": [
-                            {"type": "text", "text": prompt},
-                            {
-                                "type": "image_url",
-                                "image_url": {
-                                    "url": f"data:image/jpeg;base64,{base64_image}"
-                                }
-                            }
-                        ]
-                    }
-                ],
-                "temperature": 0.1
-            }
-
-            try:
-                response = requests.post(
-                    "https://models.github.ai/inference/chat/completions",
-                    headers=headers,
-                    json=payload,
-                    timeout=30
-                )
-
-                st.write("---")
-                st.subheader("🔍 伺服器底層探測結果：")
-                st.info(f"**HTTP 狀態碼**：{response.status_code}")
-                st.warning(f"**原始回傳內容**：\n{response.text if response.text else '(伺服器回傳完全空白)'}")
-
-            except Exception as e:
-                st.error(f"❌ 網路請求發生例外錯誤：{e}")
+    .huge-font {
         font-size: 130px !important;
         font-weight: bold;
         color: #2C3E50;
@@ -90,37 +25,44 @@ if api_key:
     unsafe_allow_html=True,
 )
 
-st.title("🈛 部首識別助手")
+st.title("🈛 部首識別助手 (Groq 極速版)")
 st.write("請拍照或上傳包含漢字的圖片：")
 
-api_key = st.secrets.get("GITHUB_TOKEN", "")
+# 讀取 Groq API Key
+api_key = st.secrets.get("GROQ_API_KEY", "")
+
 if not api_key:
-    api_key = st.text_input("請輸入 GitHub Token：", type="password")
+    api_key = st.text_input("請輸入 Groq API Key (gsk_...)：", type="password")
 
 if api_key:
-    img_file = st.camera_input("📷 拍照辨識") or st.file_uploader("📁 上傳圖片", type=["jpg", "jpeg", "png"])
+    # 指向 Groq 的 API 伺服器
+    client = OpenAI(
+        base_url="https://api.groq.com/openai/v1",
+        api_key=api_key.strip(),
+    )
+
+    img_file = st.camera_input("📷 拍照辨識") or st.file_uploader("📁 或上傳圖片檔案", type=["jpg", "jpeg", "png"])
 
     if img_file:
-        # 圖片處理
+        # 讀取圖片並進行適度壓縮，以符合 API 傳輸限制
         image = Image.open(img_file).convert("RGB")
         image.thumbnail((800, 800))
         buffered = io.BytesIO()
-        image.save(buffered, format="JPEG")
+        image.save(buffered, format="JPEG", quality=85)
         base64_image = base64.b64encode(buffered.getvalue()).decode("utf-8")
 
-        prompt = "你是一個部首辨識小助手。請辨識圖片中的漢字，並只輸出該字的「部首」（例如：艹、水、木）。絕對不要輸出其他字。"
+        prompt = """
+        你是一個專為小學一年級學生設計的繁體中文「部首識別助手」。
+        請仔細看這張圖片裡的漢字，並找出它的「部首」。
+        只需要輸出該字的部首（例如：艹、水、木、女）。
+        絕對不要輸出任何解釋、拼音或標點符號。
+        """
 
-        with st.spinner("正在透過原生 HTTP 協定連線中..."):
-            # 準備直接發送給 GitHub API 的資料
-            headers = {
-                "Authorization": f"Bearer {api_key.strip()}",
-                "Content-Type": "application/json"
-            }
-            
-            payload = {
-                "model": "gpt-4o",
-                "messages": [
-                    {
+        with st.spinner("正在使用 Groq 視覺模型極速辨識中..."):
+            try:
+                response = client.chat.completions.create(
+                    model="llama-3.2-90b-vision-preview",
+                    messages=[{
                         "role": "user",
                         "content": [
                             {"type": "text", "text": prompt},
@@ -131,32 +73,18 @@ if api_key:
                                 }
                             }
                         ]
-                    }
-                ],
-                "temperature": 0.1
-            }
-
-            try:
-                # 直接對官方端點發起 POST 請求
-                response = requests.post(
-                    "https://models.github.ai/inference/chat/completions",
-                    headers=headers,
-                    json=payload,
-                    timeout=30
+                    }],
+                    temperature=0.1,
+                    max_tokens=15,
                 )
 
-                # 判斷 HTTP 狀態碼
-                if response.status_code == 200:
-                    data = response.json()
-                    content = data["choices"][0]["message"]["content"].strip()
-                    clean_r = content.replace("#", "").replace("*", "").replace("`", "")
-                    
-                    st.write("---")
-                    st.subheader("辨識結果：")
-                    st.markdown(f'<div class="huge-font">{clean_r}</div>', unsafe_allow_html=True)
-                else:
-                    # 如果失敗，直接把 GitHub 伺服器的原始阻擋原因印出來
-                    st.error(f"❌ GitHub 伺服器拒絕連線 (錯誤碼 {response.status_code})：\n{response.text}")
+                # 提取並清理模型輸出的文字
+                content = response.choices[0].message.content.strip()
+                clean_r = content.replace("#", "").replace("*", "").replace("`", "").replace(".", "")
+
+                st.write("---")
+                st.subheader("辨識結果：")
+                st.markdown(f'<div class="huge-font">{clean_r}</div>', unsafe_allow_html=True)
 
             except Exception as e:
-                st.error(f"❌ 本地網路錯誤：{e}")
+                st.error(f"❌ 辨識發生錯誤：{e}")
