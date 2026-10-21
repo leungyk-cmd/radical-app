@@ -61,7 +61,7 @@ if api_key:
         with st.spinner("正在使用 Groq 視覺模型極速辨識中..."):
             try:
                 response = client.chat.completions.create(
-                   model="llama-3.2-11b-vision-preview",  # 如果此名稱依然報錯，請改填 "llama-3.2-11b-vision-preview"
+                   model="llama-3.2-90b-vision-instruct",
                     messages=[{
                         "role": "user",
                         "content": [
