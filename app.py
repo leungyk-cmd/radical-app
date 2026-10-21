@@ -21,11 +21,6 @@ st.markdown(
         margin-top: 15px;
         margin-bottom: 15px;
     }
-    .status-info {
-        font-size: 14px;
-        color: #7f8c8d;
-        text-align: center;
-    }
     </style>
 """,
     unsafe_allow_html=True,
@@ -79,25 +74,16 @@ if api_key:
     image.save(buffered, format="JPEG", quality=95)
     base64_image = base64.b64encode(buffered.getvalue()).decode("utf-8")
 
-    # 強化 Prompt：加入 Few-shot 範例與強烈的負向約束，防止 AI 回傳 "OK"
-    system_prompt = """你是一個專為小學一年級學生設計的繁體中文「部首識別助手」。
-任務：請識別圖片中的漢字，並只輸出該字的「部首」（繁體字）。
+    # 統一提示詞：整合至 User 訊息，明確引導分析圖片
+    prompt_text = """請仔細分析這張圖片中的中文漢字，並找出該字的「部首」（繁體字）。
 
 【嚴格規則】
-1. 只輸出部首字（例如：艹、木、水、女），絕對不要輸出任何其他文字、拼音、標點符號。
-2. 嚴禁輸出 "OK"、"Received"、"收到" 或任何英文說明！
+1. 只需要輸出該漢字的部首（例如：艹、女、木、水）。
+2. 絕對禁止輸出 "OK"、"Received" 或任何英文與說明文字！
 3. 若有多個字，請逐行輸出各字的部首。
-
-【範例】
-- 若圖片字為「花」，請輸出：艹
-- 若圖片字為「媽」，請輸出：女
-- 若圖片字為「草」，請輸出：艹
 """
 
-    candidate_models = [
-        "gpt-4o-mini",
-        "gpt-4o",
-    ]
+    candidate_models = ["gpt-4o-mini", "gpt-4o"]
 
     with st.spinner("正在辨識部首中..."):
       success = False
@@ -107,31 +93,33 @@ if api_key:
         try:
           response = client.chat.completions.create(
               model=model_name,
-              messages=[
-                  {"role": "system", "content": system_prompt},
-                  {
-                      "role": "user",
-                      "content": [
-                          {"type": "text", "text": "請辨識這張圖片中漢字的部首："},
-                          {
-                              "type": "image_url",
-                              "image_url": {
-                                  "url": f"data:image/jpeg;base64,{base64_image}"
-                              },
+              messages=[{
+                  "role": "user",
+                  "content": [
+                      {"type": "text", "text": prompt_text},
+                      {
+                          "type": "image_url",
+                          "image_url": {
+                              "url": f"data:image/jpeg;base64,{base64_image}",
+                              "detail": "high",  # 開啟高解析度圖片 OCR 辨識
                           },
-                      ],
-                  },
-              ],
+                      },
+                  ],
+              }],
               temperature=0.1,
           )
 
           response_text = parse_response_text(response).strip()
 
-          # 若模型依然回傳 "OK" 等確認詞，觸發例外機制切換下一個模型
-          if response_text.upper() in ["OK", "OK.", "RECEIVED", "RECEIVED.", ""]:
-            raise ValueError(
-                f"模型 {model_name} 誤回傳確認詞 ({response_text})，自動切換備用模型重新分析"
-            )
+          # 過濾非部首的無效回應
+          if response_text.upper() in [
+              "OK",
+              "OK.",
+              "RECEIVED",
+              "RECEIVED.",
+              "",
+          ]:
+            raise ValueError(f"模型 {model_name} 回傳無效文字 ({response_text})")
 
           radicals = response_text.split("\n")
 
