@@ -1,13 +1,12 @@
 import base64
 import io
-from openai import OpenAI
+from groq import Groq
 from PIL import Image
+import requests
 import streamlit as st
 
-# 頁面標題與佈局設定
 st.set_page_config(page_title="部首識別助手", page_icon="🈛", layout="centered")
 
-# 自訂 CSS 樣式：將部首字體放大到極大，並置中顯示
 st.markdown(
     """
     <style>
@@ -25,57 +24,66 @@ st.markdown(
     unsafe_allow_html=True,
 )
 
-st.title("部首識別助手")
+st.title("🈛 部首識別助手")
 st.write("請拍照或上傳包含漢字的圖片：")
 
-# 從系統設定讀取 OpenRouter API Key
-api_key = st.secrets.get("OPENROUTER_API_KEY", "")
+api_key = st.secrets.get("GROQ_API_KEY", "")
 
 if not api_key:
-  api_key = st.text_input(
-      "請輸入 OpenRouter API Key (sk-or-v1-...)：", type="password"
-  )
+  api_key = st.text_input("請輸入 Groq API Key (gsk_...)：", type="password")
+
+
+# 運用 Groq 的 /v1/models API 自動尋找可用的 Vision 模型
+def get_active_groq_vision_model(key):
+  try:
+    url = "https://api.groq.com/openai/v1/models"
+    headers = {
+        "Authorization": f"Bearer {key}",
+        "Content-Type": "application/json",
+    }
+    response = requests.get(url, headers=headers)
+    if response.status_code == 200:
+      models_data = response.json().get("data", [])
+      # 篩選出 ID 包含 "vision" 且狀態開啟的模型
+      vision_models = [
+          m["id"] for m in models_data if "vision" in m["id"].lower()
+      ]
+      if vision_models:
+        return vision_models[0]  # 自動取得第一個可用的視覺模型
+  except Exception:
+    pass
+  return None
+
 
 if api_key:
-  client = OpenAI(
-      base_url="https://openrouter.ai/api/v1",
-      api_key=api_key,
-  )
+  client = Groq(api_key=api_key)
 
   img_file = st.camera_input("📷 拍照辨識") or st.file_uploader(
       "📁 或上傳圖片檔案", type=["jpg", "jpeg", "png"]
   )
 
   if img_file:
-    image = Image.open(img_file).convert("RGB")
+    # 自動向 Groq 查詢最新的 Vision 模型 ID
+    active_vision_model = get_active_groq_vision_model(api_key)
 
-    buffered = io.BytesIO()
-    image.save(buffered, format="JPEG")
-    base64_image = base64.b64encode(buffered.getvalue()).decode("utf-8")
+    if not active_vision_model:
+      st.error("Groq 目前暫無開啟中的 Vision (圖片辨識) 模型，請稍後再試。")
+    else:
+      image = Image.open(img_file).convert("RGB")
+      buffered = io.BytesIO()
+      image.save(buffered, format="JPEG")
+      base64_image = base64.b64encode(buffered.getvalue()).decode("utf-8")
 
-    prompt = """
-        你是一個專為小學一年級學生設計的繁體中文「部首識別助手」。
-        請識別圖片中的文字，並找出該字的「部首」。
-        只需要輸出該字或該些字的部首，絕對不要添加任何解釋、拼音或標點符號。
-        若有多個字，請逐行輸出部首。
-        """
+      prompt = """
+            你是一個專為小學一年級學生設計的繁體中文「部首識別助手」。
+            請識別圖片中的文字，並找出該字的「部首」。
+            只需要輸出該字或該些字的部首，絕對不要添加任何解釋、拼音或標點符號。
+            若有多個字，請逐行輸出部首。
+            """
 
-    # 備援模型清單：當第一個模型離線時，自動順位切換下一個
-    candidate_models = [
-        "qwen/qwen-2.5-vl-72b-instruct:free",
-        "meta-llama/llama-3.2-11b-vision-instruct:free",
-        "google/gemini-2.0-flash-lite-preview-02-05:free",
-        "openrouter/free",  # OpenRouter 自動分流模型
-    ]
-
-    with st.spinner("正在辨識部首中..."):
-      success = False
-      last_error = None
-
-      for model_name in candidate_models:
+      with st.spinner(f"正在透過 ({active_vision_model}) 辨識部首中..."):
         try:
-          response = client.chat.completions.create(
-              model=model_name,
+          chat_completion = client.chat.completions.create(
               messages=[{
                   "role": "user",
                   "content": [
@@ -88,9 +96,13 @@ if api_key:
                       },
                   ],
               }],
+              model=active_vision_model,  # 動態使用查詢到的模型名稱
+              temperature=0.1,
           )
 
-          response_text = response.choices[0].message.content.strip()
+          response_text = (
+              chat_completion.choices[0].message.content.strip()
+          )
           radicals = response_text.split("\n")
 
           st.write("---")
@@ -102,14 +114,5 @@ if api_key:
                   f'<div class="huge-font">{clean_r}</div>',
                   unsafe_allow_html=True,
               )
-          success = True
-          break  # 成功辨識即跳出迴圈
         except Exception as e:
-          last_error = e
-          continue  # 若失敗則嘗試下一個模型
-
-      if not success:
-        st.error(
-            "目前免費服務端點擁塞，請稍後重試。錯誤訊息："
-            f" {last_error}"
-        )
+          st.error(f"辨識發生錯誤：{e}")
