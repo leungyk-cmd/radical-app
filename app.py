@@ -69,20 +69,19 @@ if api_key:
   )
 
   if img_file:
-    # 讀取圖片並進行自動縮放壓縮 (解決 Base64 過大被 API 截斷問題)
+    # 讀取圖片並壓縮至最適合 OCR 的 600px 尺寸
     image = Image.open(img_file).convert("RGB")
-    image.thumbnail((800, 800))  # 將圖片等比例縮放至 800px 以內
+    image.thumbnail((600, 600))
 
     buffered = io.BytesIO()
-    image.save(
-        buffered, format="JPEG", quality=85
-    )  # 壓縮 JPEG 品質至 85%，降至約 50KB
+    image.save(buffered, format="JPEG", quality=85)
     base64_image = base64.b64encode(buffered.getvalue()).decode("utf-8")
 
+    # 完全移除任何含有 OK 的負向詞，改用正向引導
     prompt_text = (
-        "圖片裡有一個繁體中文漢字，請找出該字的「部首」。"
-        "【規則】請只輸出一個繁體字部首（如：艹、女、木、水），絕對不要輸出"
-        ' "OK"、標點符號或任何說明文字。'
+        "請辨識圖片中的漢字，並直接輸出該漢字的「繁體部首」。"
+        "範例：艹、女、木、水。"
+        "注意事項：僅輸出部首單字本身，不要加任何標點或說明。"
     )
 
     candidate_models = ["gpt-4o-mini", "gpt-4o"]
@@ -108,20 +107,26 @@ if api_key:
                   ],
               }],
               temperature=0.1,
-              max_tokens=20,  # 強制限制輸出長度，防止多餘廢話
+              max_tokens=15,
           )
 
           response_text = parse_response_text(response).strip()
 
-          # 若模型依然回傳無效文字，觸發切換
-          if response_text.upper() in [
+          # 自動過濾非部首的回應（例如 confirmation 詞彙）
+          invalid_words = [
               "OK",
               "OK.",
               "RECEIVED",
-              "RECEIVED.",
+              "CONFIRMED",
+              "YES",
+              "NO",
               "",
-          ]:
-            raise ValueError(f"模型 {model_name} 回傳無效文字 ({response_text})")
+          ]
+          if (
+              response_text.upper() in invalid_words
+              or len(response_text) > 10
+          ):
+            raise ValueError(f"模型 {model_name} 回傳非部首文字 ({response_text})")
 
           radicals = response_text.split("\n")
 
