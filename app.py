@@ -1,5 +1,6 @@
 import base64
 import io
+import json
 from openai import OpenAI
 from PIL import Image
 import streamlit as st
@@ -28,6 +29,30 @@ st.markdown(
 st.title("🈛 部首識別助手")
 st.write("請拍照或上傳包含漢字的圖片：")
 
+
+# 多重型態相容解析函式
+def parse_response_text(response):
+  # 1. 若回應為字串（含 JSON 字串與純文字）
+  if isinstance(response, str):
+    try:
+      data = json.loads(response)
+      if isinstance(data, dict) and "choices" in data:
+        return data["choices"][0]["message"]["content"]
+    except Exception:
+      pass
+    return response
+
+  # 2. 若回應為標準 ChatCompletion 物件
+  if hasattr(response, "choices"):
+    return response.choices[0].message.content
+
+  # 3. 若回應為字典 (dict)
+  if isinstance(response, dict):
+    return response.get("choices", [{}])[0].get("message", {}).get("content", "")
+
+  return str(response)
+
+
 # 讀取 GitHub Token
 api_key = st.secrets.get("GITHUB_TOKEN", "")
 
@@ -37,7 +62,6 @@ if not api_key:
   )
 
 if api_key:
-  # 使用 GitHub Models 最新官方正式 Endpoint
   client = OpenAI(
       base_url="https://models.github.ai/inference",
       api_key=api_key.strip(),
@@ -60,7 +84,6 @@ if api_key:
         若有多個字，請逐行輸出部首。
         """
 
-    # 備援模型清單
     candidate_models = [
         "gpt-4o-mini",
         "gpt-4o",
@@ -89,7 +112,8 @@ if api_key:
               }],
           )
 
-          response_text = response.choices[0].message.content.strip()
+          # 安全提取回應內容
+          response_text = parse_response_text(response).strip()
           radicals = response_text.split("\n")
 
           st.write("---")
