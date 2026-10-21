@@ -5,7 +5,7 @@ from PIL import Image
 import streamlit as st
 
 # 頁面標題與佈局設定
-st.set_page_config(page_title="部首識別助手", page_icon="", layout="centered")
+st.set_page_config(page_title="部首識別助手", page_icon="🈛", layout="centered")
 
 # 自訂 CSS 樣式：將部首字體放大到極大，並置中顯示
 st.markdown(
@@ -37,22 +37,18 @@ if not api_key:
   )
 
 if api_key:
-  # 初始化 OpenAI SDK，並將 Base URL 指向 OpenRouter
   client = OpenAI(
       base_url="https://openrouter.ai/api/v1",
       api_key=api_key,
   )
 
-  # 提供「拍照」與「上傳圖片」雙功能
   img_file = st.camera_input("📷 拍照辨識") or st.file_uploader(
       "📁 或上傳圖片檔案", type=["jpg", "jpeg", "png"]
   )
 
   if img_file:
-    # 讀取圖片並轉為 RGB 格式
     image = Image.open(img_file).convert("RGB")
 
-    # 將圖片轉換為 Base64 編碼
     buffered = io.BytesIO()
     image.save(buffered, format="JPEG")
     base64_image = base64.b64encode(buffered.getvalue()).decode("utf-8")
@@ -64,37 +60,56 @@ if api_key:
         若有多個字，請逐行輸出部首。
         """
 
+    # 備援模型清單：當第一個模型離線時，自動順位切換下一個
+    candidate_models = [
+        "qwen/qwen-2.5-vl-72b-instruct:free",
+        "meta-llama/llama-3.2-11b-vision-instruct:free",
+        "google/gemini-2.0-flash-lite-preview-02-05:free",
+        "openrouter/free",  # OpenRouter 自動分流模型
+    ]
+
     with st.spinner("正在辨識部首中..."):
-      try:
-        response = client.chat.completions.create(
-            # 使用 OpenRouter 上的免費中文視覺模型 (或改用 "openrouter/free" 由系統自動分流)
-            model="google/gemini-2.0-flash-exp:free",
-            messages=[{
-                "role": "user",
-                "content": [
-                    {"type": "text", "text": prompt},
-                    {
-                        "type": "image_url",
-                        "image_url": {
-                            "url": f"data:image/jpeg;base64,{base64_image}"
-                        },
-                    },
-                ],
-            }],
+      success = False
+      last_error = None
+
+      for model_name in candidate_models:
+        try:
+          response = client.chat.completions.create(
+              model=model_name,
+              messages=[{
+                  "role": "user",
+                  "content": [
+                      {"type": "text", "text": prompt},
+                      {
+                          "type": "image_url",
+                          "image_url": {
+                              "url": f"data:image/jpeg;base64,{base64_image}"
+                          },
+                      },
+                  ],
+              }],
+          )
+
+          response_text = response.choices[0].message.content.strip()
+          radicals = response_text.split("\n")
+
+          st.write("---")
+          st.subheader("辨識結果：")
+          for r in radicals:
+            clean_r = r.strip().replace("#", "").replace("*", "")
+            if clean_r:
+              st.markdown(
+                  f'<div class="huge-font">{clean_r}</div>',
+                  unsafe_allow_html=True,
+              )
+          success = True
+          break  # 成功辨識即跳出迴圈
+        except Exception as e:
+          last_error = e
+          continue  # 若失敗則嘗試下一個模型
+
+      if not success:
+        st.error(
+            "目前免費服務端點擁塞，請稍後重試。錯誤訊息："
+            f" {last_error}"
         )
-
-        response_text = response.choices[0].message.content.strip()
-        radicals = response_text.split("\n")
-
-        st.write("---")
-        st.subheader("辨識結果：")
-        for r in radicals:
-          clean_r = r.strip().replace("#", "").replace("*", "")
-          if clean_r:
-            # 以 CSS 巨型字體呈現部首
-            st.markdown(
-                f'<div class="huge-font">{clean_r}</div>',
-                unsafe_allow_html=True,
-            )
-      except Exception as e:
-        st.error(f"辨識發生錯誤：{e}")
