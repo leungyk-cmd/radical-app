@@ -1,6 +1,7 @@
 import base64
 import io
 import json
+import re
 from openai import OpenAI
 from PIL import Image
 import streamlit as st
@@ -33,21 +34,45 @@ st.write("請拍照或上傳包含漢字的圖片：")
 # 多重型態相容解析函式
 def parse_response_text(response):
   if isinstance(response, str):
-    try:
-      data = json.loads(response)
-      if isinstance(data, dict) and "choices" in data:
-        return data["choices"][0]["message"]["content"]
-    except Exception:
-      pass
     return response
 
-  if hasattr(response, "choices"):
-    return response.choices[0].message.content
+  if hasattr(response, "choices") and response.choices:
+    content = response.choices[0].message.content
+    return content if content is not None else ""
 
   if isinstance(response, dict):
     return response.get("choices", [{}])[0].get("message", {}).get("content", "")
 
-  return str(response)
+  return str(response) if response else ""
+
+
+# 安全提取部首的強健函式
+def extract_radical_safe(raw_text):
+  if not raw_text or not raw_text.strip():
+    return None
+
+  # 1. 清除可能包覆在外的 Markdown 語法 (```json ... ```)
+  clean_text = (
+      re.sub(r"```(?:json)?", "", raw_text, flags=re.IGNORECASE)
+      .replace("```", "")
+      .strip()
+  )
+
+  # 2. 嘗試解析 JSON
+  try:
+    data = json.loads(clean_text)
+    if isinstance(data, dict):
+      result = data.get("radical") or data.get("部首") or data.get("result")
+      if result:
+        return str(result).strip()
+  except Exception:
+    pass
+
+  # 3. 若 JSON 解析失敗，直接採用純文字（過濾掉 OK、RECEIVED 等無效詞）
+  if clean_text.upper() in ["OK", "OK.", "RECEIVED", "CONFIRMED", "YES", ""]:
+    return None
+
+  return clean_text
 
 
 # 讀取 GitHub Token
@@ -69,7 +94,7 @@ if api_key:
   )
 
   if img_file:
-    # 讀取圖片並縮放至適合 OCR 的尺寸
+    # 讀取圖片並壓縮
     image = Image.open(img_file).convert("RGB")
     image.thumbnail((500, 500))
 
@@ -79,7 +104,7 @@ if api_key:
 
     prompt_text = (
         "請辨識這張圖片中的繁體中文漢字，並找出該字的「部首」。"
-        '請務必僅以 JSON 格式輸出，格式範例：{"radical": "艹"}'
+        '請以 JSON 格式輸出，例如：{"radical": "艹"}'
     )
 
     candidate_models = ["gpt-4o-mini", "gpt-4o"]
@@ -104,14 +129,17 @@ if api_key:
                       },
                   ],
               }],
-              response_format={"type": "json_object"},  # 強制 AI 必須輸出 JSON 結構
               temperature=0.1,
               max_tokens=100,
           )
 
-          response_text = parse_response_text(response).strip()
-          data = json.loads(response_text)
-          radical_result = data.get("radical", "").strip()
+          raw_text = parse_response_text(response)
+          radical_result = extract_radical_safe(raw_text)
+
+          if not radical_result:
+            raise ValueError(
+                f"模型 {model_name} 回傳無法解析的內容：{raw_text}"
+            )
 
           clean_r = (
               radical_result.replace("#", "")
@@ -119,9 +147,6 @@ if api_key:
               .replace(".", "")
               .replace("`", "")
           )
-
-          if not clean_r or clean_r.upper() in ["OK", "RECEIVED", "UNKNOWN"]:
-            raise ValueError(f"模型 {model_name} 未能成功提取部首，輸出：{response_text}")
 
           st.write("---")
           st.subheader("辨識結果：")
