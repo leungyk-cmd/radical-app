@@ -68,7 +68,7 @@ if api_key:
       try:
         response = client.chat.completions.create(
             # 使用 OpenRouter 上的免費中文視覺模型 (或改用 "openrouter/free" 由系統自動分流)
-            model="qwen/qwen-2.5-vl-72b-instruct:free",
+            model="google/gemini-2.0-flash-exp:free",
             messages=[{
                 "role": "user",
                 "content": [
