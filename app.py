@@ -69,24 +69,22 @@ if api_key:
   )
 
   if img_file:
-    # 讀取圖片並壓縮至最適合 OCR 的 600px 尺寸
+    # 讀取圖片並縮放至適合 OCR 的尺寸
     image = Image.open(img_file).convert("RGB")
-    image.thumbnail((600, 600))
+    image.thumbnail((500, 500))
 
     buffered = io.BytesIO()
-    image.save(buffered, format="JPEG", quality=85)
+    image.save(buffered, format="JPEG", quality=80)
     base64_image = base64.b64encode(buffered.getvalue()).decode("utf-8")
 
-    # 完全移除任何含有 OK 的負向詞，改用正向引導
     prompt_text = (
-        "請辨識圖片中的漢字，並直接輸出該漢字的「繁體部首」。"
-        "範例：艹、女、木、水。"
-        "注意事項：僅輸出部首單字本身，不要加任何標點或說明。"
+        "請辨識這張圖片中的繁體中文漢字，並找出該字的「部首」。"
+        '請務必僅以 JSON 格式輸出，格式範例：{"radical": "艹"}'
     )
 
     candidate_models = ["gpt-4o-mini", "gpt-4o"]
 
-    with st.spinner("正在高速辨識部首中..."):
+    with st.spinner("正在辨識部首中..."):
       success = False
       last_error = None
 
@@ -106,45 +104,31 @@ if api_key:
                       },
                   ],
               }],
+              response_format={"type": "json_object"},  # 強制 AI 必須輸出 JSON 結構
               temperature=0.1,
-              max_tokens=15,
+              max_tokens=100,
           )
 
           response_text = parse_response_text(response).strip()
+          data = json.loads(response_text)
+          radical_result = data.get("radical", "").strip()
 
-          # 自動過濾非部首的回應（例如 confirmation 詞彙）
-          invalid_words = [
-              "OK",
-              "OK.",
-              "RECEIVED",
-              "CONFIRMED",
-              "YES",
-              "NO",
-              "",
-          ]
-          if (
-              response_text.upper() in invalid_words
-              or len(response_text) > 10
-          ):
-            raise ValueError(f"模型 {model_name} 回傳非部首文字 ({response_text})")
+          clean_r = (
+              radical_result.replace("#", "")
+              .replace("*", "")
+              .replace(".", "")
+              .replace("`", "")
+          )
 
-          radicals = response_text.split("\n")
+          if not clean_r or clean_r.upper() in ["OK", "RECEIVED", "UNKNOWN"]:
+            raise ValueError(f"模型 {model_name} 未能成功提取部首，輸出：{response_text}")
 
           st.write("---")
           st.subheader("辨識結果：")
-          for r in radicals:
-            clean_r = (
-                r.strip()
-                .replace("#", "")
-                .replace("*", "")
-                .replace(".", "")
-                .replace("`", "")
-            )
-            if clean_r:
-              st.markdown(
-                  f'<div class="huge-font">{clean_r}</div>',
-                  unsafe_allow_html=True,
-              )
+          st.markdown(
+              f'<div class="huge-font">{clean_r}</div>',
+              unsafe_allow_html=True,
+          )
 
           success = True
           break
