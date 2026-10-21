@@ -1,11 +1,21 @@
 import base64
 import io
-from openai import OpenAI
+from azure.ai.inference import ChatCompletionsClient
+from azure.ai.inference.models import (
+    ImageContentItem,
+    ImageUrl,
+    SystemMessage,
+    TextContentItem,
+    UserMessage,
+)
+from azure.core.credentials import AzureKeyCredential
 from PIL import Image
 import streamlit as st
 
+# 頁面標題與佈局設定
 st.set_page_config(page_title="部首識別助手", page_icon="🈛", layout="centered")
 
+# 自訂 CSS 巨型字體
 st.markdown(
     """
     <style>
@@ -26,6 +36,7 @@ st.markdown(
 st.title("🈛 部首識別助手")
 st.write("請拍照或上傳包含漢字的圖片：")
 
+# 讀取 GitHub Token
 api_key = st.secrets.get("GITHUB_TOKEN", "")
 
 if not api_key:
@@ -34,12 +45,15 @@ if not api_key:
   )
 
 if api_key:
-  client = OpenAI(
-      base_url="https://models.inference.ai.azure.com",
-      api_key=api_key,
+  # 使用微軟官方專為 GitHub Models 設計的 ChatCompletionsClient
+  client = ChatCompletionsClient(
+      endpoint="https://models.inference.ai.azure.com",
+      credential=AzureKeyCredential(api_key.strip()),
   )
 
-  img_file = st.camera_input("📷 拍照辨識") or st.file_uploader("📁 或上傳圖片檔案", type=["jpg", "jpeg", "png"])
+  img_file = st.camera_input("📷 拍照辨識") or st.file_uploader(
+      "📁 或上傳圖片檔案", type=["jpg", "jpeg", "png"]
+  )
 
   if img_file:
     image = Image.open(img_file).convert("RGB")
@@ -54,11 +68,10 @@ if api_key:
         若有多個字，請逐行輸出部首。
         """
 
-    # GitHub Models 上的 3 大免費視覺模型輪播清單
     candidate_models = [
-        "gpt-4o-mini",  # 速度快、每日 150 次
-        "gpt-4o",  # 準確率最高、旗艦版
-        "Phi-3.5-vision-instruct",  # 微軟原生備援模型
+        "gpt-4o-mini",
+        "gpt-4o",
+        "Phi-3.5-vision-instruct",
     ]
 
     with st.spinner("正在辨識部首中..."):
@@ -67,20 +80,19 @@ if api_key:
 
       for model_name in candidate_models:
         try:
-          response = client.chat.completions.create(
+          response = client.complete(
+              messages=[
+                  SystemMessage(content=prompt),
+                  UserMessage(content=[
+                      TextContentItem(text="請辨識這張圖片中的字與部首："),
+                      ImageContentItem(
+                          image_url=ImageUrl(
+                              url=f"data:image/jpeg;base64,{base64_image}"
+                          )
+                      ),
+                  ]),
+              ],
               model=model_name,
-              messages=[{
-                  "role": "user",
-                  "content": [
-                      {"type": "text", "text": prompt},
-                      {
-                          "type": "image_url",
-                          "image_url": {
-                              "url": f"data:image/jpeg;base64,{base64_image}"
-                          },
-                      },
-                  ],
-              }],
           )
 
           response_text = response.choices[0].message.content.strip()
@@ -102,4 +114,4 @@ if api_key:
           continue
 
       if not success:
-        st.error(f"辨識發生錯誤或所有模型額度用盡：{last_error}")
+        st.error(f"辨識發生錯誤：{last_error}")
