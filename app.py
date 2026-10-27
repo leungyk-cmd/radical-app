@@ -64,7 +64,7 @@ if api_key:
                     ],
                     config=types.GenerateContentConfig(
                         temperature=0.1,
-                        max_output_tokens=15,
+                        max_output_tokens=300,
                         # 關閉所有安全過濾機制
                         safety_settings=[
                             types.SafetySetting(
