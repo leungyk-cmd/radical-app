@@ -5,7 +5,7 @@ from PIL import Image
 import streamlit as st
 
 # 頁面標題與佈局設定
-st.set_page_config(page_title="部首識別助手", page_icon="🈛", layout="centered")
+st.set_page_config(page_title="部首識別助手", page_icon="", layout="centered")
 
 # 自訂 CSS 巨型字體
 st.markdown(
