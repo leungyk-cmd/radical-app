@@ -23,7 +23,7 @@ st.markdown(
     unsafe_allow_html=True,
 )
 
-st.title("部首識別助手")
+st.title("🈛 部首識別助手 (Google Gemini 版)")
 st.write("請拍照或上傳包含漢字的圖片：")
 
 # 讀取 Gemini API Key
@@ -39,10 +39,7 @@ if api_key:
     img_file = st.camera_input("📷 拍照辨識") or st.file_uploader("📁 或上傳圖片檔案", type=["jpg", "jpeg", "png"])
 
     if img_file:
-        # 讀取圖片的二進位資料
         image_bytes = img_file.getvalue()
-
-        # 判斷圖片格式以設定對應的 MIME 類型
         mime_type = "image/jpeg"
         if img_file.name.lower().endswith(".png"):
             mime_type = "image/png"
@@ -59,29 +56,48 @@ if api_key:
 
         with st.spinner("正在使用 Google Gemini 視覺模型辨識中..."):
             try:
-                # 呼叫 Gemini 3.8 Flash 模型
                 response = client.models.generate_content(
-                    model='gemini-3.8-flash',
+                    model='gemini-3.8-flash', # 若此模型名稱報錯，請改為 'gemini-1.5-flash'
                     contents=[
-                        types.Part.from_bytes(
-                            data=image_bytes,
-                            mime_type=mime_type,
-                        ),
+                        types.Part.from_bytes(data=image_bytes, mime_type=mime_type),
                         prompt
                     ],
                     config=types.GenerateContentConfig(
                         temperature=0.1,
                         max_output_tokens=15,
+                        # 關閉所有安全過濾機制，避免圖片筆畫被誤判阻擋
+                        safety_settings=[
+                            types.SafetySetting(
+                                category=types.HarmCategory.HARM_CATEGORY_HATE_SPEECH,
+                                threshold=types.HarmBlockThreshold.BLOCK_NONE,
+                            ),
+                            types.SafetySetting(
+                                category=types.HarmCategory.HARM_CATEGORY_HARASSMENT,
+                                threshold=types.HarmBlockThreshold.BLOCK_NONE,
+                            ),
+                            types.SafetySetting(
+                                category=types.HarmCategory.HARM_CATEGORY_SEXUALLY_EXPLICIT,
+                                threshold=types.HarmBlockThreshold.BLOCK_NONE,
+                            ),
+                            types.SafetySetting(
+                                category=types.HarmCategory.HARM_CATEGORY_DANGEROUS_CONTENT,
+                                threshold=types.HarmBlockThreshold.BLOCK_NONE,
+                            ),
+                        ]
                     )
                 )
 
-                # 提取並清理模型輸出的文字
-                content = response.text.strip()
-                clean_r = content.replace("#", "").replace("*", "").replace("`", "").replace(".", "")
+                # 增加防呆機制：確保模型有回傳文字才進行處理
+                if response.text:
+                    content = response.text.strip()
+                    clean_r = content.replace("#", "").replace("*", "").replace("`", "").replace(".", "")
 
-                st.write("---")
-                st.subheader("辨識結果：")
-                st.markdown(f'<div class="huge-font">{clean_r}</div>', unsafe_allow_html=True)
+                    st.write("---")
+                    st.subheader("辨識結果：")
+                    st.markdown(f'<div class="huge-font">{clean_r}</div>', unsafe_allow_html=True)
+                else:
+                    # 若依然被阻擋或回傳為空，顯示友善提示
+                    st.error("⚠️ API 成功連線，但模型未能回傳文字。可能是圖片內容過於模糊或觸發了殘留的過濾機制，請重新拍攝一張再試一次。")
 
             except Exception as e:
                 st.error(f"❌ 辨識發生錯誤：{e}")
