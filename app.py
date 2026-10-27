@@ -25,7 +25,7 @@ st.markdown(
     unsafe_allow_html=True,
 )
 
-st.title("部首識別助手 (Groq 最新版)")
+st.title("部首識別助手")
 st.write("請拍照或上傳包含漢字的圖片：")
 
 # 讀取 Groq API Key
