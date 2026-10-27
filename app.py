@@ -23,7 +23,7 @@ st.markdown(
     unsafe_allow_html=True,
 )
 
-st.title("🈛 部首識別助手 (Google Gemini 版)")
+st.title("🈛 部首識別助手 (Google Gemini 終極除錯版)")
 st.write("請拍照或上傳包含漢字的圖片：")
 
 # 讀取 Gemini API Key
@@ -57,7 +57,7 @@ if api_key:
         with st.spinner("正在使用 Google Gemini 視覺模型辨識中..."):
             try:
                 response = client.models.generate_content(
-                    model='gemini-3.8-flash', # 若此模型名稱報錯，請改為 'gemini-1.5-flash'
+                    model='gemini-3.8-flash',
                     contents=[
                         types.Part.from_bytes(data=image_bytes, mime_type=mime_type),
                         prompt
@@ -65,7 +65,7 @@ if api_key:
                     config=types.GenerateContentConfig(
                         temperature=0.1,
                         max_output_tokens=15,
-                        # 關閉所有安全過濾機制，避免圖片筆畫被誤判阻擋
+                        # 關閉所有安全過濾機制
                         safety_settings=[
                             types.SafetySetting(
                                 category=types.HarmCategory.HARM_CATEGORY_HATE_SPEECH,
@@ -87,7 +87,7 @@ if api_key:
                     )
                 )
 
-                # 增加防呆機制：確保模型有回傳文字才進行處理
+                # 正常回傳文字時的處理
                 if response.text:
                     content = response.text.strip()
                     clean_r = content.replace("#", "").replace("*", "").replace("`", "").replace(".", "")
@@ -96,8 +96,23 @@ if api_key:
                     st.subheader("辨識結果：")
                     st.markdown(f'<div class="huge-font">{clean_r}</div>', unsafe_allow_html=True)
                 else:
-                    # 若依然被阻擋或回傳為空，顯示友善提示
-                    st.error("⚠️ API 成功連線，但模型未能回傳文字。可能是圖片內容過於模糊或觸發了殘留的過濾機制，請重新拍攝一張再試一次。")
+                    # 終極除錯機制：直接印出 API 拒絕回傳的真實原因
+                    st.error("⚠️ 模型依然回傳為空！我們來看看它到底發生了什麼事：")
+                    
+                    if response.candidates:
+                        finish_reason = response.candidates[0].finish_reason
+                        st.warning(f"🔍 官方中斷原因代碼 (Finish Reason): {finish_reason}")
+                        
+                        if str(finish_reason) == "SAFETY":
+                            st.info("💡 診斷：還是被安全機制擋下了！可能是圖片裡的筆畫太像某些敏感符號。")
+                        elif str(finish_reason) == "MAX_TOKENS":
+                            st.info("💡 診斷：字數限制設定太小，導致它還沒說完就被切斷了。")
+                        else:
+                            st.info("💡 診斷：未知的阻擋原因，請參考下方的原始資料。")
+                    
+                    # 將整包原始資料顯示在畫面上，方便排查
+                    st.write("📦 原始回傳資料：")
+                    st.write(response)
 
             except Exception as e:
                 st.error(f"❌ 辨識發生錯誤：{e}")
