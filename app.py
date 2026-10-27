@@ -57,7 +57,7 @@ if api_key:
         with st.spinner("正在使用 Google Gemini 視覺模型辨識中..."):
             try:
                 response = client.models.generate_content(
-                    model='gemini-1.5-flash', # 若此模型名稱報錯，請改為 'gemini-1.5-flash'
+                    model='gemini-2.5-flash', # 若此模型名稱報錯，請改為 'gemini-1.5-flash'
                     contents=[
                         types.Part.from_bytes(data=image_bytes, mime_type=mime_type),
                         prompt
